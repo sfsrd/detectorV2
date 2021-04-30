@@ -2,15 +2,28 @@ import argparse
 import os
 import cv2
 import numpy as np
+from keras.preprocessing import image
+from keras.models import load_model
+import time
 
-symlinksFolder = 'path-to/symlinks'
 currentListDir = os.listdir(symlinksFolder)
-fileLog = open("fileLog.txt", "w") 
 
-""" load model for classification"""
-MODEL_FILE = 'path-to/model_ResNet152.model'
-model = load_model(MODEL_FILE, compile = True)
+def _log(severity,tag):
+    logfile = "fileLog.txt"
+    loglevels = ['error','warning','info','debug']
+    level_conf = 0
+    level_in = 0
 
+    try:
+        level_in = loglevels.index(severity)
+    except ValueError:
+        level_in = 2
+    if level_conf >= level_in: 
+        line = "%s [%s] (%s): %s" % (time.strftime('%d-%m-%Y %H:%M:%S',time.localtime()),str(os.getpid()),severity,tag)
+        log = open(logfile,'a')
+        log.write(line)
+        log.write("\r\n")
+        log.close()
 
 def predict(model, img):
     """ function for image classification"""
@@ -23,7 +36,7 @@ def predict(model, img):
     perc_n = round(100*model.predict(x)[0][0], 1)
     return preds[0], perc_s, perc_n
 
-def classification(image, model, fileLog):
+def classification(image, model):
     """ function for block image classification """
     h_im = image.shape[0]
     w_im = image.shape[1]
@@ -35,52 +48,73 @@ def classification(image, model, fileLog):
             preds, perc_s, perc_n = predict(model, img)
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
             pred_res = str('smoke %: ' + perc_s + 'no_smoke %' + perc_n)
-            fileLog.write("Block: " + block_position + pred_res + "\n") 
+            line = "Block: " + block_position + pred_res
+            _log('info', line) 
             i = i+1
             w = w+size
         h = h+size
         w = 0
 
 
-def open_image(symlink, fileLog):
+def open_image(symlink):
     """ function for opening image from .npz format by symlink """
     path = os.readlink(symlink)
     image = np.load(path)
-    fileLog.write("Image was loaded by path: " + path + "\n") 
+    line = "Image was loaded by path: " + path
+    _log('info', line)  
     return image
 
-def check_symlinks(symlinksFolder, oldListDir, fileLog):
+def check_symlinks(symlinksFolder, oldListDir):
     """ function for checking symlinks folder for new files """
     dirList = os.listdir(symlinksFolder)
     if len(dirList)>len(oldListDir):
-        fileLog.write("Found new symlinks files. Count: " + len(dirList)>len(oldListDir)+ "\n") 
+        line = "Found new symlinks files. Count: " + str(len(dirList)-len(oldListDir))
+        _log('info', line)   
         setDifference = set(dirList) - set(oldListDir)
         listNewSymlinks = list(setDifference)
     else:
-        fileLog.write("No new symlinks files \n") 
+        line = "No new symlinks files"
+        _log('info', line)   
         listNewSymlinks = []
     return listNewSymlinks, dirList
 
+def main():
+    if len(sys.argv) == 4:
+        # sys.argv[1] - detection/classification flag
+        # sys.argv[2] - path to symlinks folder
+        # sys.argv[3] - path to model
+        if not os.path.isdir(sys.argv[2]):
+			_log('error', 'Symlinks folder cannot be found by path: %s' % sys.argv[2])
+        
+        symlinksFolder = sys.argv[2]
+        MODEL_FILE = sys.argv[3]
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--option", choices=["yolov4", "classification"], required=True, type=str)
-args = parser.parse_args()
-op_type = args.option
-if op_type == "yolov4":
-    fileLog.write("Chosen option: object detection by YOLOv4 \n") 
-if op_type == "classification":
-    fileLog.write("Chosen option: classification \n") 
+        # object detection or classification
+        op_type = sys.argv[1]
+        if op_type == "yolov4":
+            line = "Chosen option: object detection by YOLOv4"
+            _log('info', line) 
+        if op_type == "classification":
+            line = "Chosen option: classification"
+            _log('info', line)
+            model = load_model(MODEL_FILE, compile = True)
+            _log('info', 'Model file was loaded')
+    
+    listNewSymlinks, listDir = check_symlinks(symlinksFolder, currentListDir)
+    currentListDir = listDir
 
-listNewSymlinks, listDir = check_symlinks(symlinksFolder, currentListDir, fileLog)
-currentListDir = listDir
+    if len(listNewSymlinks)==0:
+        _log('warning', 'No new symlinks: break') 
+        break()
+    else:
+        if op_type == "classification":
+            for filename in listNewSymlinks:
+                line = "For image " + filename
+                _log('info', line)
+                image = open_image(filename, fileLog)
+                classification(image, model)
 
-if len(listNewSymlinks)==0:
-    fileLog.write("No new symlinks: break \n")
-    break()
-else:
-    if op_type == "yolov4":
-        for filename in listNewSymlinks:
-            fileLog.write("For image " + filename + "\n")
-            image = open_image(filename, fileLog)
 
-fileLog.close() 
+if __name__ == '__main__':
+	ec = main()
+    sys.exit(ec)
