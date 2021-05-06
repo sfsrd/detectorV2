@@ -100,19 +100,26 @@ def main():
             model = load_model(MODEL_FILE, compile = True)
             _log('info', 'Model file was loaded')
     
-    listNewSymlinks, listDir = check_symlinks(symlinksFolder, currentListDir)
-    currentListDir = listDir
+    flag_ = 'true'
+    while (flag_ != 'false'):
+        listNewSymlinks, listDir = check_symlinks(symlinksFolder, currentListDir)
+        currentListDir = listDir
 
-    if len(listNewSymlinks)==0:
-        _log('warning', 'No new symlinks: break') 
-        break()
-    else:
-        if op_type == "classification":
-            for filename in listNewSymlinks:
-                line = "For image " + filename
-                _log('info', line)
-                image = open_image(filename, fileLog)
-                classification(image, model)
+        if len(listNewSymlinks)==0:
+            _log('warning', 'No new symlinks: continue') 
+            continue()
+        else:
+            if op_type == "classification":
+                for filename in listNewSymlinks:
+                    line = "For image " + filename
+                    _log('info', line)
+                    image = open_image(filename, fileLog)
+                    classification(image, model)
+        
+        file_flag = open('flag.txt', 'r')
+        flag_ = file_flag.readlines()[0]
+        if f flag_ == 'false':
+            _log('info', 'detector was stopped by changing flag')
 
 
 if __name__ == '__main__':
