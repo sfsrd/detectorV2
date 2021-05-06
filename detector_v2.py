@@ -6,8 +6,6 @@ from keras.preprocessing import image
 from keras.models import load_model
 import time
 
-currentListDir = os.listdir(symlinksFolder)
-
 def _log(severity,tag):
     logfile = "fileLog.txt"
     loglevels = ['error','warning','info','debug']
@@ -40,11 +38,14 @@ def classification(image, model):
     """ function for block image classification """
     h_im = image.shape[0]
     w_im = image.shape[1]
+    #size defines the square side of detection zone in image
     size = 416
     while h+size <= h_im:
         while w+size <= w_im:
             img = image.copy()
+            #crop needed piece of image
             img = img[h:h+size,w:w+size]
+            #get predictions
             preds, perc_s, perc_n = predict(model, img)
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
             pred_res = str('smoke %: ' + perc_s + 'no_smoke %' + perc_n)
@@ -58,7 +59,9 @@ def classification(image, model):
 
 def open_image(symlink):
     """ function for opening image from .npz format by symlink """
+    #define path to image by symlink
     path = os.readlink(symlink)
+    #image is in .npz format. open .npz format with numpy
     image = np.load(path)
     line = "Image was loaded by path: " + path
     _log('info', line)  
@@ -66,15 +69,18 @@ def open_image(symlink):
 
 def check_symlinks(symlinksFolder, oldListDir):
     """ function for checking symlinks folder for new files """
+    #get curent dirlist in folder
     dirList = os.listdir(symlinksFolder)
+    #compare current dirlist with older one
     if len(dirList)>len(oldListDir):
         line = "Found new symlinks files. Count: " + str(len(dirList)-len(oldListDir))
-        _log('info', line)   
+        _log('info', line)
+        #list listNewSymlinks contains symlinks that do not exist in oldListDir
         setDifference = set(dirList) - set(oldListDir)
         listNewSymlinks = list(setDifference)
     else:
         line = "No new symlinks files"
-        _log('info', line)   
+        _log('info', line)  
         listNewSymlinks = []
     return listNewSymlinks, dirList
 
@@ -100,8 +106,17 @@ def main():
             model = load_model(MODEL_FILE, compile = True)
             _log('info', 'Model file was loaded')
     
+    #check new current symlinks
+    currentListDir = os.listdir(symlinksFolder)
+    #change flag in file if previously it was set false
+    file_flag = open('flag.txt', 'w')
+    file_flag.write('true')
+    file_flag.close()
+    #before while set flag_ true
     flag_ = 'true'
+
     while (flag_ != 'false'):
+        #condition - if in file flag was set false, it would finish current circle
         listNewSymlinks, listDir = check_symlinks(symlinksFolder, currentListDir)
         currentListDir = listDir
 
@@ -116,10 +131,11 @@ def main():
                     image = open_image(filename, fileLog)
                     classification(image, model)
         
+        #check if flag was set false
         file_flag = open('flag.txt', 'r')
         flag_ = file_flag.readlines()[0]
-        if f flag_ == 'false':
-            _log('info', 'detector was stopped by changing flag')
+        if flag_ == 'false':
+            _log('info', 'detector was stopped by changing flag' )
 
 
 if __name__ == '__main__':
