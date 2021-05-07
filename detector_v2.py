@@ -5,6 +5,7 @@ import numpy as np
 from keras.preprocessing import image
 from keras.models import load_model
 import time
+import tensorrt as trt
 
 def _log(severity,tag):
     logfile = "fileLog.txt"
@@ -22,6 +23,10 @@ def _log(severity,tag):
         log.write(line)
         log.write("\r\n")
         log.close()
+
+####################
+## CLASSIFICATION ##
+####################
 
 def predict(model, img):
     """ function for image classification"""
@@ -56,6 +61,140 @@ def classification(image, model):
         h = h+size
         w = 0
 
+#############################
+## OBJECT DETECTION YOLOV4 ##
+#############################
+
+def get_engine(engine_path):
+    #if a serialized engine exists, use it instead of building an engine.
+    _log ('info', "Reading engine from file {}".format(engine_path))
+    with open(engine_path, "rb") as f, trt.Runtime(TRT_LOGGER) as runtime:
+        return runtime.deserialize_cuda_engine(f.read())
+
+def allocate_buffers(engine, batch_size):
+    inputs = []
+    outputs = []
+    bindings = []
+    stream = cuda.Stream()
+    for binding in engine:
+
+        size = trt.volume(engine.get_binding_shape(binding)) * batch_size
+        dims = engine.get_binding_shape(binding)
+        
+        # in case batch dimension is -1 (dynamic)
+        if dims[0] < 0:
+            size *= -1
+        
+        dtype = trt.nptype(engine.get_binding_dtype(binding))
+        # Allocate host and device buffers
+        host_mem = cuda.pagelocked_empty(size, dtype)
+        device_mem = cuda.mem_alloc(host_mem.nbytes)
+        # Append the device buffer to device bindings.
+        bindings.append(int(device_mem))
+        # Append to the appropriate list.
+        if engine.binding_is_input(binding):
+            inputs.append(HostDeviceMem(host_mem, device_mem))
+        else:
+            outputs.append(HostDeviceMem(host_mem, device_mem))
+    return inputs, outputs, bindings, stream
+
+def load_class_names(namesfile):
+    class_names = []
+    with open(namesfile, 'r') as fp:
+        lines = fp.readlines()
+    for line in lines:
+        line = line.rstrip()
+        class_names.append(line)
+    return class_names
+
+def plot_boxes_cv2(img, boxes, class_names=None, color=None):
+    import cv2
+    img = np.copy(img)
+    colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
+
+    def get_color(c, x, max_val):
+        ratio = float(x) / max_val * 5
+        i = int(math.floor(ratio))
+        j = int(math.ceil(ratio))
+        ratio = ratio - i
+        r = (1 - ratio) * colors[i][c] + ratio * colors[j][c]
+        return int(r * 255)
+
+    width = img.shape[1]
+    height = img.shape[0]
+    for i in range(len(boxes)):
+        box = boxes[i]
+        x1 = int(box[0] * width)
+        y1 = int(box[1] * height)
+        x2 = int(box[2] * width)
+        y2 = int(box[3] * height)
+
+        if color:
+            rgb = color
+        else:
+            rgb = (255, 0, 0)
+        if len(box) >= 7 and class_names:
+            cls_conf = box[5]
+            cls_id = box[6]
+            print('%s: %f' % (class_names[cls_id], cls_conf))
+            classes = len(class_names)
+            offset = cls_id * 123457 % classes
+            red = get_color(2, offset, classes)
+            green = get_color(1, offset, classes)
+            blue = get_color(0, offset, classes)
+            if color is None:
+                rgb = (red, green, blue)
+            img = cv2.putText(img, class_names[cls_id], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
+        img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 1)
+    return img
+
+def detect(context, buffers, image_src, image_size, num_classes):
+    IN_IMAGE_H, IN_IMAGE_W = image_size
+
+    ta = time.time()
+    # Input
+    resized = cv2.resize(image_src, (IN_IMAGE_W, IN_IMAGE_H), interpolation=cv2.INTER_LINEAR)
+    img_in = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+    img_in = np.transpose(img_in, (2, 0, 1)).astype(np.float32)
+    img_in = np.expand_dims(img_in, axis=0)
+    img_in /= 255.0
+    img_in = np.ascontiguousarray(img_in)
+    #_log('info', "Shape of the network input: ", img_in.shape)
+
+    inputs, outputs, bindings, stream = buffers
+    #_log('info', 'Length of inputs: ', len(inputs))
+    inputs[0].host = img_in
+    trt_outputs = do_inference(context, bindings=bindings, inputs=inputs, outputs=outputs, stream=stream)
+
+    #_logt('info', 'Len of outputs: ', len(trt_outputs))
+
+    trt_outputs[0] = trt_outputs[0].reshape(1, -1, 1, 4)
+    trt_outputs[1] = trt_outputs[1].reshape(1, -1, num_classes)
+
+    tb = time.time()
+    _log('info', 'TRT inference time: %f' % (tb - ta))
+    boxes = post_processing(img_in, 0.4, 0.6, trt_outputs)
+
+    return boxes
+
+def detect_trt_yolov4(engine_path, image_path, image_size):
+    with get_engine(engine_path) as engine, engine.create_execution_context() as context:
+        buffers = allocate_buffers(engine, 1)
+
+        image_src = cv2.imread(image_path)
+        IN_IMAGE_H, IN_IMAGE_W, _ = image_src.shape
+        context.set_binding_shape(0, (1, 3, IN_IMAGE_H, IN_IMAGE_W))
+
+        num_classes = 2
+        namesfile = 'data/names'
+
+        for i in range(2):  # This 'for' loop is for speed check
+                            # Because the first iteration is usually longer
+            boxes = detect(context, buffers, image_src, image_size, num_classes)
+
+        class_names = load_class_names(namesfile)
+        plot_boxes_cv2(image_src, boxes[0], class_names=class_names)
+#############################
 
 def open_image(symlink):
     """ function for opening image from .npz format by symlink """
@@ -66,6 +205,7 @@ def open_image(symlink):
     line = "Image was loaded by path: " + path
     _log('info', line)  
     return image
+
 
 def check_symlinks(symlinksFolder, oldListDir):
     """ function for checking symlinks folder for new files """
@@ -99,12 +239,12 @@ def main():
         op_type = sys.argv[1]
         if op_type == "yolov4":
             line = "Chosen option: object detection by YOLOv4"
-            _log('info', line) 
+            _log('info', line)
+            model = load_model(MODEL_FILE, compile = True)
+            _log('info', 'Engine TensorRT file was loaded')
         if op_type == "classification":
             line = "Chosen option: classification"
             _log('info', line)
-            model = load_model(MODEL_FILE, compile = True)
-            _log('info', 'Model file was loaded')
     
     #check new current symlinks
     currentListDir = os.listdir(symlinksFolder)
@@ -130,6 +270,12 @@ def main():
                     _log('info', line)
                     image = open_image(filename, fileLog)
                     classification(image, model)
+            
+            if op_type == "yolov4":
+                for filename in listNewSymlinks:
+                    line = "For image " + filename
+                    _log('info', line)
+                    detect_trt_yolov4(MODEL_FILE, os.readlink(filename))
         
         #check if flag was set false
         file_flag = open('flag.txt', 'r')
