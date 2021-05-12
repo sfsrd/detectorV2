@@ -35,14 +35,20 @@ def predict(model, img):
     x = np.expand_dims(x, axis=0)
     x = preprocess_input(x)
     preds = np.argmax(model.predict(x), axis=-1)
+    #get percent of smoke prediction - perc_s
     perc_s = round(100*model.predict(x)[0][1], 1)
+    #get percent of no smoke prediction - perc_n
     perc_n = round(100*model.predict(x)[0][0], 1)
     return preds[0], perc_s, perc_n
 
-def classification(image, model):
+def classification(filename, image, model):
     """ function for block image classification """
     h_im = image.shape[0]
     w_im = image.shape[1]
+    #get name of file without extension
+    name = os.path.splitext(os.path.basename(filename))[0]
+    #create detection file
+    detections = open('dets/' + name + '.txt', 'a')
     #size defines the square side of detection zone in image
     size = 416
     while h+size <= h_im:
@@ -52,14 +58,18 @@ def classification(image, model):
             img = img[h:h+size,w:w+size]
             #get predictions
             preds, perc_s, perc_n = predict(model, img)
+            #get position of block relatively to image
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
             pred_res = str('smoke %: ' + perc_s + 'no_smoke %' + perc_n)
+            #write detection results
+            detections.write(pred_res+'\n')
             line = "Block: " + block_position + pred_res
             _log('info', line) 
             i = i+1
             w = w+size
         h = h+size
         w = 0
+    detections.close()
 
 #############################
 ## OBJECT DETECTION YOLOV4 ##
@@ -107,49 +117,54 @@ def load_class_names(namesfile):
         class_names.append(line)
     return class_names
 
-def plot_boxes_cv2(img, boxes, class_names=None, color=None):
-    import cv2
-    img = np.copy(img)
-    colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
+# def plot_boxes_cv2(img, boxes, class_names=None, color=None):
+#     import cv2
+#     img = np.copy(img)
+#     colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
 
-    def get_color(c, x, max_val):
-        ratio = float(x) / max_val * 5
-        i = int(math.floor(ratio))
-        j = int(math.ceil(ratio))
-        ratio = ratio - i
-        r = (1 - ratio) * colors[i][c] + ratio * colors[j][c]
-        return int(r * 255)
+#     def get_color(c, x, max_val):
+#         ratio = float(x) / max_val * 5
+#         i = int(math.floor(ratio))
+#         j = int(math.ceil(ratio))
+#         ratio = ratio - i
+#         r = (1 - ratio) * colors[i][c] + ratio * colors[j][c]
+#         return int(r * 255)
 
-    width = img.shape[1]
-    height = img.shape[0]
-    for i in range(len(boxes)):
-        box = boxes[i]
-        x1 = int(box[0] * width)
-        y1 = int(box[1] * height)
-        x2 = int(box[2] * width)
-        y2 = int(box[3] * height)
+#     width = img.shape[1]
+#     height = img.shape[0]
+#     for i in range(len(boxes)):
+#         box = boxes[i]
+#         x1 = int(box[0] * width)
+#         y1 = int(box[1] * height)
+#         x2 = int(box[2] * width)
+#         y2 = int(box[3] * height)
 
-        if color:
-            rgb = color
-        else:
-            rgb = (255, 0, 0)
-        if len(box) >= 7 and class_names:
-            cls_conf = box[5]
-            cls_id = box[6]
-            print('%s: %f' % (class_names[cls_id], cls_conf))
-            classes = len(class_names)
-            offset = cls_id * 123457 % classes
-            red = get_color(2, offset, classes)
-            green = get_color(1, offset, classes)
-            blue = get_color(0, offset, classes)
-            if color is None:
-                rgb = (red, green, blue)
-            img = cv2.putText(img, class_names[cls_id], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
-        img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 1)
-    return img
+#         if color:
+#             rgb = color
+#         else:
+#             rgb = (255, 0, 0)
+#         if len(box) >= 7 and class_names:
+#             cls_conf = box[5]
+#             cls_id = box[6]
+#             #print('%s: %f' % (class_names[cls_id], cls_conf))
+#             classes = len(class_names)
+#             offset = cls_id * 123457 % classes
+#             red = get_color(2, offset, classes)
+#             green = get_color(1, offset, classes)
+#             blue = get_color(0, offset, classes)
+#             if color is None:
+#                 rgb = (red, green, blue)
+#             img = cv2.putText(img, class_names[cls_id], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
+#         img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 1)
+#     return img
 
-def detect(context, buffers, image_src, image_size, num_classes):
+def detect(context, buffers, image_src, image_size, num_classes, image_path):
     IN_IMAGE_H, IN_IMAGE_W = image_size
+
+    #get name of file without extension
+    name = os.path.splitext(os.path.basename(filename))[0]
+    #create detection file
+    detections = open('dets/' + name + '.txt', 'a')
 
     ta = time.time()
     # Input
@@ -175,6 +190,13 @@ def detect(context, buffers, image_src, image_size, num_classes):
     _log('info', 'TRT inference time: %f' % (tb - ta))
     boxes = post_processing(img_in, 0.4, 0.6, trt_outputs)
 
+    # box[5] - confidence
+    # box[6] index of object: 0 - smoke; 1 - fire
+    line = 'Image: ' + filename + 'Object: ' + box[6] + 'Confidence: ' + box[5] 
+    _log('info', line)
+    detections.write(pred_res+'\n')
+    detections.close()
+
     return boxes
 
 def detect_trt_yolov4(engine_path, image_path, image_size):
@@ -182,7 +204,7 @@ def detect_trt_yolov4(engine_path, image_path, image_size):
         buffers = allocate_buffers(engine, 1)
 
         image_src = cv2.imread(image_path)
-        IN_IMAGE_H, IN_IMAGE_W, _ = image_src.shape
+        IN_IMAGE_H, IN_IMAGE_W = image_size
         context.set_binding_shape(0, (1, 3, IN_IMAGE_H, IN_IMAGE_W))
 
         num_classes = 2
@@ -190,10 +212,10 @@ def detect_trt_yolov4(engine_path, image_path, image_size):
 
         for i in range(2):  # This 'for' loop is for speed check
                             # Because the first iteration is usually longer
-            boxes = detect(context, buffers, image_src, image_size, num_classes)
+            boxes = detect(context, buffers, image_src, image_size, num_classes, image_path)
 
         class_names = load_class_names(namesfile)
-        plot_boxes_cv2(image_src, boxes[0], class_names=class_names)
+        #plot_boxes_cv2(image_src, boxes[0], class_names=class_names)
 #############################
 
 def open_image(symlink):
@@ -269,7 +291,7 @@ def main():
                     line = "For image " + filename
                     _log('info', line)
                     image = open_image(filename, fileLog)
-                    classification(image, model)
+                    classification(filename, image, model)
             
             if op_type == "yolov4":
                 for filename in listNewSymlinks:
