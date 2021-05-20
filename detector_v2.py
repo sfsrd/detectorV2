@@ -28,7 +28,7 @@ def _log(severity,tag):
 ## CLASSIFICATION ##
 ####################
 
-def predict(model, img):
+def predict(model, img, batch_size):
     """ function for image classification"""
     img = cv2.resize(img, (128, 128))
     x = image.img_to_array(img)
@@ -41,7 +41,7 @@ def predict(model, img):
     perc_n = round(100*model.predict(x)[0][0], 1)
     return preds[0], perc_s, perc_n
 
-def classification(filename, image, model):
+def classification(filename, image, model, batch_size):
     """ function for block image classification """
     h_im = image.shape[0]
     w_im = image.shape[1]
@@ -57,7 +57,7 @@ def classification(filename, image, model):
             #crop needed piece of image
             img = img[h:h+size,w:w+size]
             #get predictions
-            preds, perc_s, perc_n = predict(model, img)
+            preds, perc_s, perc_n = predict(model, img, batch_size)
             #get position of block relatively to image
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
             pred_res = str('smoke %: ' + perc_s + 'no_smoke %' + perc_n)
@@ -291,7 +291,7 @@ def main():
                     line = "For image " + filename
                     _log('info', line)
                     image = open_image(filename, fileLog)
-                    classification(filename, image, model)
+                    classification(filename, image, model, batch_size)
             
             if op_type == "yolov4":
                 for filename in listNewSymlinks:
