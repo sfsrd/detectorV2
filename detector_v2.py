@@ -295,8 +295,7 @@ def main():
         if op_type == "yolov4":
             line = "Chosen option: object detection by YOLOv4"
             _log('info', line)
-            model = load_model(MODEL_FILE, compile = True)
-            _log('info', 'Engine TensorRT file was loaded')
+
         if op_type == "classification":
             line = "Chosen option: classification"
             _log('info', line)
