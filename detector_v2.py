@@ -51,24 +51,40 @@ def classification(filename, image, model, batch_size):
     detections = open('dets/' + name + '.txt', 'a')
     #size defines the square side of detection zone in image
     size = 416
+    X_data = []
+
     while h+size <= h_im:
         while w+size <= w_im:
             img = image.copy()
             #crop needed piece of image
             img = img[h:h+size,w:w+size]
-            #get predictions
-            preds, perc_s, perc_n = predict(model, img, batch_size)
+            img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            img = cv2.resize(img, (416, 416))
+            img = np.array(img)
+            X_data.append(img)
+            w = w+size
+
+        h = h+size
+        w = 0
+    X_data = np.array(X_data)
+    y_pred = model.predict(X_data, batch_size=batch_size)
+
+    i = 0
+    while h+size <= h_im:
+        while w+size <= w_im:
             #get position of block relatively to image
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
-            pred_res = str('smoke %: ' + perc_s + 'no_smoke %' + perc_n)
+            pred_res = str('smoke %: ' + y_pred[i][0] + 'no_smoke %' + y_pred[i][1] )
             #write detection results
             detections.write(pred_res+'\n')
             line = "Block: " + block_position + pred_res
             _log('info', line) 
-            i = i+1
+
             w = w+size
+            i+=1
         h = h+size
         w = 0
+
     detections.close()
 
 #############################
@@ -157,6 +173,21 @@ def load_class_names(namesfile):
 #             img = cv2.putText(img, class_names[cls_id], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
 #         img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 1)
 #     return img
+
+# This function is generalized for multiple inputs/outputs.
+# inputs and outputs are expected to be lists of HostDeviceMem objects.
+def do_inference(context, bindings, inputs, outputs, stream):
+    # Transfer input data to the GPU.
+    [cuda.memcpy_htod_async(inp.device, inp.host, stream) for inp in inputs]
+    # Run inference.
+    context.execute_async(bindings=bindings, stream_handle=stream.handle)
+    # Transfer predictions back from the GPU.
+    [cuda.memcpy_dtoh_async(out.host, out.device, stream) for out in outputs]
+    # Synchronize the stream
+    stream.synchronize()
+    # Return only the host outputs.
+    return [out.host for out in outputs]
+
 
 def detect(context, buffers, image_src, image_size, num_classes, image_path):
     IN_IMAGE_H, IN_IMAGE_W = image_size
@@ -247,15 +278,17 @@ def check_symlinks(symlinksFolder, oldListDir):
     return listNewSymlinks, dirList
 
 def main():
-    if len(sys.argv) == 4:
+    if len(sys.argv) == 5:
         # sys.argv[1] - detection/classification flag
         # sys.argv[2] - path to symlinks folder
         # sys.argv[3] - path to model
+        # sys.argv[4] - batch size
         if not os.path.isdir(sys.argv[2]):
 			_log('error', 'Symlinks folder cannot be found by path: %s' % sys.argv[2])
         
         symlinksFolder = sys.argv[2]
         MODEL_FILE = sys.argv[3]
+        batch_size = sys.argv[4]
 
         # object detection or classification
         op_type = sys.argv[1]

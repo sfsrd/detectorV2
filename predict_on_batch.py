@@ -28,5 +28,5 @@ for my_file in files:
 print('X_data shape:', np.array(X_data).shape)
 X_data = np.array(X_data)
 
-y_pred = model.predict(X_data, batch_size=5)
+y_pred = model.predict(X_data, batch_size=6)
 print('y_pred: ', y_pred)
