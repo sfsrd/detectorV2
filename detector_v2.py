@@ -329,7 +329,7 @@ def main():
                 for filename in listNewSymlinks:
                     line = "For image " + filename
                     _log('info', line)
-                    detect_trt_yolov4(MODEL_FILE, os.readlink(filename))
+                    detect_trt_yolov4(MODEL_FILE, os.readlink(filename), image_size)
         
         #check if flag was set false
         file_flag = open('flag.txt', 'r')
