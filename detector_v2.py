@@ -289,6 +289,7 @@ def main():
         symlinksFolder = sys.argv[2]
         MODEL_FILE = sys.argv[3]
         batch_size = sys.argv[4]
+        image_size = (3840, 2160)
 
         # object detection or classification
         op_type = sys.argv[1]
