@@ -74,7 +74,7 @@ def classification(filename, image, model, batch_size):
         while w+size <= w_im:
             #get position of block relatively to image
             block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
-            pred_res = str('smoke %: ' + y_pred[i][0] + 'no_smoke %' + y_pred[i][1] )
+            pred_res = str('smoke %: ' + str(round(y_pred[i][0]*100, 2)) + 'no_smoke %' + str(round(y_pred[i][1]*100, 2)) )
             #write detection results
             detections.write(pred_res+'\n')
             line = "Block: " + block_position + pred_res
