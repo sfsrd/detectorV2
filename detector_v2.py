@@ -91,6 +91,7 @@ def classification(filename, image, model, batch_size):
 ## OBJECT DETECTION YOLOV4 ##
 #############################
 
+TRT_LOGGER = trt.Logger()
 def get_engine(engine_path):
     #if a serialized engine exists, use it instead of building an engine.
     _log ('info', "Reading engine from file {}".format(engine_path))
