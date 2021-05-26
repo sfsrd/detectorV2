@@ -52,7 +52,7 @@ def classification(filename, image, model, batch_size):
     #create detection file
     detections = open('dets/' + name + '.txt', 'a')
     #size defines the square side of detection zone in image
-    size = 416
+    size = 128
     X_data = []
 
     while h+size <= h_im:
