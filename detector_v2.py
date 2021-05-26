@@ -326,7 +326,7 @@ def main():
                 for filename in listNewSymlinks:
                     line = "For image " + filename
                     _log('info', line)
-                    image = open_image(filename, fileLog)
+                    image = open_image(filename)
                     classification(filename, image, model, batch_size)
             
             if op_type == "yolov4":
