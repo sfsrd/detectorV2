@@ -6,6 +6,8 @@ from keras.preprocessing import image
 from keras.models import load_model
 import time
 import tensorrt as trt
+import pycuda.driver as cuda
+import pycuda.autoinit
 
 def _log(severity,tag):
     logfile = "fileLog.txt"
