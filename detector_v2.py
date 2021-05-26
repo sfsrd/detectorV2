@@ -54,14 +54,18 @@ def classification(filename, image, model, batch_size):
     #size defines the square side of detection zone in image
     size = 128
     X_data = []
+    block_pos = []
 
     while h+size <= h_im:
         while w+size <= w_im:
             img = image.copy()
             #crop needed piece of image
             img = img[h:h+size,w:w+size]
+            block_cur = [h, w]
+            #add current position to list with all block positions in image
+            block_pos.append(block_cur)
             img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-            img = cv2.resize(img, (416, 416))
+            img = cv2.resize(img, (size, size))
             img = np.array(img)
             X_data.append(img)
             w = w+size
@@ -69,23 +73,19 @@ def classification(filename, image, model, batch_size):
         h = h+size
         w = 0
     X_data = np.array(X_data)
+    #predict on batch
     y_pred = model.predict(X_data, batch_size=batch_size)
 
     i = 0
-    while h+size <= h_im:
-        while w+size <= w_im:
-            #get position of block relatively to image
-            block_position = str('h: '+ h + ' h+size:'+h+size+', w: '+w+' w+size:'+w+size)
-            pred_res = str('smoke %: ' + str(round(y_pred[i][0]*100, 2)) + 'no_smoke %' + str(round(y_pred[i][1]*100, 2)) )
-            #write detection results
-            detections.write(pred_res+'\n')
-            line = "Block: " + block_position + pred_res
-            _log('info', line) 
-
-            w = w+size
-            i+=1
-        h = h+size
-        w = 0
+    while i<len(y_pred):
+        #get position of block relatively to image
+        block_position = str('h: '+ block_pos[i][0] + ' h+size:'+block_pos[i][0]+size+', w: '+block_pos[i][1]+' w+size:'+block_pos[i][1]+size)
+        pred_res = str('smoke %: ' + str(round(y_pred[i][0]*100, 2)) + 'no_smoke %' + str(round(y_pred[i][1]*100, 2)) )
+        #write detection results
+        detections.write(pred_res+'\n')
+        line = "Block: " + block_position + pred_res
+        _log('info', line)
+        i+=1
 
     detections.close()
 
@@ -233,9 +233,9 @@ def detect(context, buffers, image_src, image_size, num_classes, image_path):
 
     return boxes
 
-def detect_trt_yolov4(engine_path, image_path, image_size):
+def detect_trt_yolov4(engine_path, image_path, image_size, batch_size):
     with get_engine(engine_path) as engine, engine.create_execution_context() as context:
-        buffers = allocate_buffers(engine, 1)
+        buffers = allocate_buffers(engine, batch_size)
 
         image_src = cv2.imread(image_path)
         IN_IMAGE_H, IN_IMAGE_W = image_size
@@ -333,7 +333,7 @@ def main():
                 for filename in listNewSymlinks:
                     line = "For image " + filename
                     _log('info', line)
-                    detect_trt_yolov4(MODEL_FILE, os.readlink(filename), image_size)
+                    detect_trt_yolov4(MODEL_FILE, os.readlink(filename), image_size, batch_size)
         
         #check if flag was set false
         file_flag = open('flag.txt', 'r')
