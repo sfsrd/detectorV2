@@ -12,8 +12,9 @@ X_data = []
 files_dir = "/home/ariel/ADUK/cvml/ANYFOR/dataset_single_smoke/"
 files = os.listdir(files_dir)
 
-MODEL_FILE = '/home/ariel/ADUK/cvml/ANYFOR/model/classifier/dataset_split2/model_ResNet152_50.model'
+MODEL_FILE = '/home/ariel/ADUK/cvml/ANYFOR/model/classifier/TF_MODELS/whole image/model_ResNet152_25.model'
 model = load_model(MODEL_FILE, compile = True)
+model.summary()
 image_size = 128
 
 for my_file in files:
@@ -21,7 +22,7 @@ for my_file in files:
     print(img_path)
     image = cv2.imread(img_path)
     image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
-    image = cv2.resize(image, (416, 416))
+    image = cv2.resize(image, (128, 128))
     image = np.array(image)
     X_data.append(image)
 
@@ -30,3 +31,4 @@ X_data = np.array(X_data)
 
 y_pred = model.predict(X_data, batch_size=6)
 print('y_pred: ', y_pred)
+print('y len: ', len(y_pred))

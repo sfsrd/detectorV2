@@ -303,6 +303,8 @@ def main():
         if op_type == "classification":
             line = "Chosen option: classification"
             _log('info', line)
+            model = load_model(MODEL_FILE, compile = True)
+            _log('info', 'Model file was loaded')
     
     #check new current symlinks
     currentListDir = os.listdir(symlinksFolder)
